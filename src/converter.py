@@ -1,25 +1,66 @@
 import re
 import os
 import markdown
-from markdown.inlinepatterns import SimpleTagInlineProcessor
+from markdown.inlinepatterns import SimpleTagInlineProcessor, ImageInlineProcessor
 from jinja2 import Template, FileSystemLoader, Environment
 
 class BoldColorPattern(SimpleTagInlineProcessor):
+    def __init__(self, pattern, md, bold_color):
+        super().__init__(pattern, md)
+        self.bold_color = bold_color
+
     def handleMatch(self, m, data):
         el = super().handleMatch(m, data)[0]
-        el.set('style', 'color: #af2618;')  # 设置加粗文本的颜色
+        el.set('style', f'color: {self.bold_color}; background-color: #ffffff; font-family: 微软雅黑, "Microsoft YaHei";')
         return el, m.start(0), m.end(0)
 
+class CustomImagePattern(ImageInlineProcessor):
+    def handleMatch(self, m, data):
+        el, start, end = super().handleMatch(m, data)
+        if el is not None:
+            br = markdown.util.etree.Element('br')
+            parent = markdown.util.etree.Element('div')
+            parent.append(el)
+            parent.append(br)
+            return parent, start, end
+        return el, start, end
+
 class BoldColorExtension(markdown.Extension):
+    def __init__(self, **kwargs):
+        self.bold_color = kwargs.pop('bold_color', '#ff6827')  # 默认颜色
+        super().__init__(**kwargs)
+
     def extendMarkdown(self, md):
-        # 注册加粗文本处理器
-        pattern = BoldColorPattern(r'\*\*([^*]+)\*\*', 'strong')
-        md.inlinePatterns.register(pattern, 'boldcolor', 175)
+        # 删除原有的加粗处理器
+        if 'strong' in md.inlinePatterns:
+            del md.inlinePatterns['strong']
+        # 注册新的加粗文本处理器
+        bold_pattern = BoldColorPattern(r'\*\*([^*]+)\*\*', md, self.bold_color)
+        md.inlinePatterns.register(bold_pattern, 'strong', 175)
+        # 替换默认的图片处理器
+        if 'image' in md.inlinePatterns:
+            del md.inlinePatterns['image']
+        image_pattern = CustomImagePattern(markdown.inlinepatterns.IMAGE_LINK_RE, md)
+        md.inlinePatterns.register(image_pattern, 'image', 150)
+
+class CustomMarkdownConverter(markdown.Markdown):
+    def convert(self, source):
+        html = super().convert(source)
+        # 为所有段落添加样式
+        html = html.replace('<p>', '<p style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; margin-top: 20px; margin-bottom: 32px; line-height: 1.75em;">')
+        return html
 
 class MarkdownConverter:
     def __init__(self, template_dir):
         self.template_dir = template_dir
-        self.md = markdown.Markdown(extensions=[BoldColorExtension()])
+        # 读取加粗文字颜色
+        try:
+            with open(os.path.join(template_dir, 'boldcolor.txt'), 'r', encoding='utf-8') as f:
+                bold_color = f.read().strip()
+        except FileNotFoundError:
+            bold_color = '#ff6827'  # 默认颜色
+            
+        self.md = CustomMarkdownConverter(extensions=[BoldColorExtension(bold_color=bold_color)])
         self.env = Environment(loader=FileSystemLoader(template_dir))
         
         # 加载模板
