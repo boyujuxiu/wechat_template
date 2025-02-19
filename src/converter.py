@@ -3,23 +3,42 @@ import os
 import markdown
 from markdown.inlinepatterns import SimpleTagInlineProcessor, ImageInlineProcessor
 from jinja2 import Template, FileSystemLoader, Environment
+try:
+    from markdown.util import etree
+except ImportError:
+    try:
+        from xml.etree import ElementTree as etree
+    except ImportError:
+        from xml.etree import cElementTree as etree
 
 class BoldColorPattern(SimpleTagInlineProcessor):
     def __init__(self, pattern, md, bold_color):
-        super().__init__(pattern, md)
+        # 不调用父类的初始化方法，直接自己实现
+        self.pattern = pattern
+        self.md = md
         self.bold_color = bold_color
+        # 编译正则表达式
+        self.compiled_re = re.compile(pattern)
 
     def handleMatch(self, m, data):
-        el = super().handleMatch(m, data)[0]
-        el.set('style', f'color: {self.bold_color}; background-color: #ffffff; font-family: 微软雅黑, "Microsoft YaHei";')
-        return el, m.start(0), m.end(0)
+        try:
+            # 直接创建 strong 元素，使用正确的 etree
+            el = etree.Element('strong')
+            # 设置文本内容
+            el.text = m.group(1) if m and m.group(1) else ''
+            # 设置样式
+            el.set('style', f'color: {self.bold_color}; background-color: #ffffff; font-family: 微软雅黑, "Microsoft YaHei";')
+            return el, m.start(0), m.end(0)
+        except Exception as e:
+            print(f"处理加粗文本时出错: {str(e)}")
+            return None, None, None
 
 class CustomImagePattern(ImageInlineProcessor):
     def handleMatch(self, m, data):
         el, start, end = super().handleMatch(m, data)
         if el is not None:
-            br = markdown.util.etree.Element('br')
-            parent = markdown.util.etree.Element('div')
+            br = etree.Element('br')
+            parent = etree.Element('div')
             parent.append(el)
             parent.append(br)
             return parent, start, end
@@ -34,9 +53,12 @@ class BoldColorExtension(markdown.Extension):
         # 删除原有的加粗处理器
         if 'strong' in md.inlinePatterns:
             del md.inlinePatterns['strong']
-        # 注册新的加粗文本处理器
-        bold_pattern = BoldColorPattern(r'\*\*([^*]+)\*\*', md, self.bold_color)
+        
+        # 使用更简单的正则表达式
+        pattern = r'\*\*(.+?)\*\*'
+        bold_pattern = BoldColorPattern(pattern, md, self.bold_color)
         md.inlinePatterns.register(bold_pattern, 'strong', 175)
+
         # 替换默认的图片处理器
         if 'image' in md.inlinePatterns:
             del md.inlinePatterns['image']
@@ -45,10 +67,18 @@ class BoldColorExtension(markdown.Extension):
 
 class CustomMarkdownConverter(markdown.Markdown):
     def convert(self, source):
-        html = super().convert(source)
-        # 为所有段落添加样式
-        html = html.replace('<p>', '<p style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; margin-top: 20px; margin-bottom: 32px; line-height: 1.75em;">')
-        return html
+        try:
+            # 预处理 markdown 内容，确保加粗语法正确
+            source = re.sub(r'\*\* +', '**', source)  # 删除**后的空格
+            source = re.sub(r' +\*\*', '**', source)  # 删除**前的空格
+            
+            html = super().convert(source)
+            # 为所有段落添加样式
+            html = html.replace('<p>', '<p style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; margin-top: 20px; margin-bottom: 32px; line-height: 1.75em;">')
+            return html
+        except Exception as e:
+            print(f"Markdown转换出错: {str(e)}")
+            raise
 
 class MarkdownConverter:
     def __init__(self, template_dir):
@@ -80,13 +110,33 @@ class MarkdownConverter:
 
     def _process_h2_titles(self, content):
         """处理二级标题，应用h2模板"""
-        h2_pattern = re.compile(r'## (.*?)\n')
-        
-        def replace_h2(match):
-            h2_text = match.group(1)
-            return self.h2_template.replace('{h2_text}', h2_text)
-        
-        return h2_pattern.sub(replace_h2, content)
+        try:
+            # 使用更严格的正则表达式匹配
+            h2_pattern = re.compile(r'^## ([^\n]+)$', re.MULTILINE)
+            
+            def replace_h2(match):
+                try:
+                    h2_text = match.group(1).strip()
+                    if not self.h2_template:
+                        print("警告: h2模板为空")
+                        return f"<h2>{h2_text}</h2>"
+                    
+                    # 确保模板中的换行符被正确处理
+                    template = self.h2_template.replace('\n', '').strip()
+                    # 使用安全的字符串替换
+                    result = template.replace('{h2_text}', h2_text)
+                    # 添加换行符确保格式正确
+                    return result + '\n'
+                except Exception as e:
+                    print(f"处理单个标题时出错: {str(e)}")
+                    print(f"标题文本: {match.group(0)}")
+                    return match.group(0)  # 返回原始文本
+            
+            processed_content = h2_pattern.sub(replace_h2, content)
+            return processed_content
+        except Exception as e:
+            print(f"处理标题时出错: {str(e)}")
+            return content  # 返回原始内容
 
     def convert_file(self, input_file, output_file):
         """转换单个文件"""
@@ -96,17 +146,33 @@ class MarkdownConverter:
                 content = f.read()
 
             # 处理二级标题
-            content = self._process_h2_titles(content)
+            try:
+                content = self._process_h2_titles(content)
+            except Exception as e:
+                print(f"处理标题时出错: {str(e)}")
+                # 继续处理，不中断转换
             
             # 转换markdown到HTML
-            html_content = self.md.convert(content)
+            try:
+                html_content = self.md.convert(content)
+            except Exception as e:
+                print(f"Markdown转换时出错: {str(e)}")
+                raise
             
             # 组合最终内容
-            final_content = self.top_template + html_content + self.bottom_template
+            try:
+                final_content = self.top_template + html_content + self.bottom_template
+            except Exception as e:
+                print(f"组合内容时出错: {str(e)}")
+                raise
             
             # 保存为txt文件
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(final_content)
+            try:
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(final_content)
+            except Exception as e:
+                print(f"保存文件时出错: {str(e)}")
+                raise
                 
             return True
         except Exception as e:
