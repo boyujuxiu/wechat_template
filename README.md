@@ -210,3 +210,36 @@ markdown_converter/
    - 使用管理员权限运行命令提示符
    - 确保所有依赖都已正确安装
    - 使用 `--clean` 参数重新打包 
+
+## 已知问题及解决方案
+
+### 1. 段落样式问题
+
+**问题描述：**
+在早期版本中，程序会为所有段落（包括标题段落）添加统一的样式，这导致了二级标题的显示出现异常，出现了多余的样式属性。
+
+**解决方案：**
+- 移除了对所有段落统一添加样式的处理
+- 让二级标题的样式完全由模板文件(h2.html)控制
+- 普通段落的样式可以通过模板文件(top.html)中的CSS来控制
+
+**代码修改：**
+```python
+class CustomMarkdownConverter(markdown.Markdown):
+    def convert(self, source):
+        try:
+            source = re.sub(r'\*\* +', '**', source)  # 删除**后的空格
+            source = re.sub(r' +\*\*', '**', source)  # 删除**前的空格
+            
+            html = super().convert(source)
+            # 移除统一的段落样式
+            return html
+        except Exception as e:
+            print(f"Markdown转换出错: {str(e)}")
+            raise
+```
+
+**使用建议：**
+1. 如需自定义段落样式，请在模板文件中通过CSS来实现
+2. 二级标题的样式应该在h2.html模板中定义
+3. 通用样式可以在top.html中通过CSS统一设置 

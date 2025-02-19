@@ -73,8 +73,8 @@ class CustomMarkdownConverter(markdown.Markdown):
             source = re.sub(r' +\*\*', '**', source)  # 删除**前的空格
             
             html = super().convert(source)
-            # 为所有段落添加样式
-            html = html.replace('<p>', '<p style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; margin-top: 20px; margin-bottom: 32px; line-height: 1.75em;">')
+            # 修改这里：不要为所有段落添加样式
+            # html = html.replace('<p>', '<p style="font-family: 微软雅黑, &quot;Microsoft YaHei&quot;; margin-top: 20px; margin-bottom: 32px; line-height: 1.75em;">')
             return html
         except Exception as e:
             print(f"Markdown转换出错: {str(e)}")
