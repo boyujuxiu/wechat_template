@@ -10,6 +10,7 @@
 - 支持模板系统，可自定义页面顶部和底部内容
 - 支持二级标题样式自定义
 - 支持加粗文本颜色自定义（通过模板目录中的boldcolor.txt文件）
+- 自动在二级标题前添加空行，优化排版
 - 自动保存配置，记住上次设置
 - 实时转换进度显示
 - 详细的操作日志记录
@@ -152,14 +153,61 @@ python gui.py
    - 设置了合适的段落间距和行高
    - 统一的字间距
 
-2. 加粗文本样式：
+2. 二级标题样式：
+   - 支持自定义模板（h2.html）
+   - 自动添加空行优化排版
+   - 支持标题序号自动递增（使用 {h2_count} 占位符）
+   - 智能空行处理（避免重复添加空行）
+   - 支持复杂的HTML结构（如多层section嵌套）
+
+3. 加粗文本样式：
    - 颜色从 `boldcolor.txt` 文件读取
    - 白色背景
    - 微软雅黑字体
 
-3. 图片处理：
+4. 图片处理：
    - 每个图片后自动添加换行
    - 保持原始图片属性
+
+## 模板文件说明
+
+### h2.html 模板示例
+```html
+<section class="_editor" data-style-id="49165" data-type="undefined" data-id="49165" data-vip="3" data-free="0">
+    <section data-align="title" style="display:flex;margin:10px 0px;justify-content:center;align-items:center;" class="">
+        <section style="width:25px;height:25px;border-radius:50%;background-color:#fee13c;text-align:center;transform:rotate(0deg);margin-right:10px;">
+            <section style="font-sizE:14px;line-height:25px;">
+                <p>
+                    <b><i>{h2_count}</i></b>
+                </p>
+            </section>
+        </section>
+        <section style="background-color:#f3fbf7;padding:5px 40px;border-radius:30px;">
+            <section style="font-size:16px;letter-spacing:2px;">
+                <p>
+                    <strong>{h2_text}</strong>
+                </p>
+            </section>
+        </section>
+    </section>
+</section>
+```
+
+模板中的占位符说明：
+- `{h2_text}`: 二级标题的文本内容
+- `{h2_count}`: 自动递增的标题序号（从1开始）
+
+### 空行处理说明
+程序会在每个二级标题前自动添加空行，使用以下HTML结构：
+```html
+<p class="aiActive"><br/></p>
+```
+
+空行处理的特点：
+1. 智能检测：如果标题前已有空行，不会重复添加
+2. 统一格式：使用HTML标签确保空行显示一致
+3. 支持自定义样式：可以通过CSS类 `aiActive` 控制空行样式
+4. 兼容性好：适用于各种HTML渲染环境
 
 ## 开发者信息
 

@@ -93,6 +93,9 @@ class MarkdownConverter:
         self.md = CustomMarkdownConverter(extensions=[BoldColorExtension(bold_color=bold_color)])
         self.env = Environment(loader=FileSystemLoader(template_dir))
         
+        # 初始化二级标题计数器
+        self.h2_count = 0
+        
         # 加载模板
         self._load_templates()
 
@@ -111,29 +114,52 @@ class MarkdownConverter:
     def _process_h2_titles(self, content):
         """处理二级标题，应用h2模板"""
         try:
-            # 使用更严格的正则表达式匹配
-            h2_pattern = re.compile(r'^## ([^\n]+)$', re.MULTILINE)
+            # 重置计数器
+            self.h2_count = 0
             
-            def replace_h2(match):
-                try:
-                    h2_text = match.group(1).strip()
+            # 先将内容按行分割
+            lines = content.split('\n')
+            processed_lines = []
+            i = 0
+            
+            while i < len(lines):
+                line = lines[i].strip()
+                if line.startswith('## '):
+                    # 增加计数器
+                    self.h2_count += 1
+                    h2_text = line[3:].strip()  # 去掉'## '和两端空白
+                    
+                    # 检查前面是否已经有空行或br标签
+                    has_space = False
+                    if processed_lines:
+                        last_line = processed_lines[-1].strip()
+                        if (last_line == '' or 
+                            last_line == '<br/>' or 
+                            last_line == '</p>' or 
+                            '<p class="aiActive">' in last_line):
+                            has_space = True
+                    
+                    # 只在没有空行时添加空行和br标签
+                    if not has_space:
+                        processed_lines.append('<p class="aiActive">')
+                        processed_lines.append('    <br/>')
+                        processed_lines.append('</p>')
+                    
                     if not self.h2_template:
                         print("警告: h2模板为空")
-                        return f"<h2>{h2_text}</h2>"
-                    
-                    # 确保模板中的换行符被正确处理
-                    template = self.h2_template.replace('\n', '').strip()
-                    # 使用安全的字符串替换
-                    result = template.replace('{h2_text}', h2_text)
-                    # 添加换行符确保格式正确
-                    return result + '\n'
-                except Exception as e:
-                    print(f"处理单个标题时出错: {str(e)}")
-                    print(f"标题文本: {match.group(0)}")
-                    return match.group(0)  # 返回原始文本
+                        processed_lines.append(f"<h2>{h2_text}</h2>")
+                    else:
+                        # 确保模板中的换行符被正确处理
+                        template = self.h2_template.replace('\n', '').strip()
+                        # 使用安全的字符串替换，同时替换 h2_text 和 h2_count
+                        result = template.replace('{h2_text}', h2_text).replace('{h2_count}', str(self.h2_count))
+                        processed_lines.append(result)
+                else:
+                    processed_lines.append(lines[i])
+                i += 1
             
-            processed_content = h2_pattern.sub(replace_h2, content)
-            return processed_content
+            # 重新组合内容
+            return '\n'.join(processed_lines)
         except Exception as e:
             print(f"处理标题时出错: {str(e)}")
             return content  # 返回原始内容
@@ -145,19 +171,35 @@ class MarkdownConverter:
             with open(input_file, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            # 处理二级标题
-            try:
-                content = self._process_h2_titles(content)
-            except Exception as e:
-                print(f"处理标题时出错: {str(e)}")
-                # 继续处理，不中断转换
-            
-            # 转换markdown到HTML
+            # 先转换markdown到HTML
             try:
                 html_content = self.md.convert(content)
             except Exception as e:
                 print(f"Markdown转换时出错: {str(e)}")
                 raise
+            
+            # 处理二级标题和添加空行
+            try:
+                # 使用正则表达式匹配二级标题的HTML标签
+                h2_pattern = re.compile(r'(?:<h2>|<section[^>]*?>\s*<section[^>]*?>\s*<section[^>]*?>\s*<p>\s*<strong>)(.*?)(?:</h2>|</strong></p>\s*</section>\s*</section>\s*</section>)', re.DOTALL)
+                
+                def replace_h2(match):
+                    self.h2_count += 1
+                    h2_text = match.group(1).strip()
+                    
+                    if not self.h2_template:
+                        return f'<p class="aiActive"><br/></p>\n<h2>{h2_text}</h2>'
+                    
+                    template = self.h2_template.replace('\n', '').strip()
+                    result = template.replace('{h2_text}', h2_text).replace('{h2_count}', str(self.h2_count))
+                    return f'<p class="aiActive"><br/></p>\n{result}'
+                
+                # 重置计数器
+                self.h2_count = 0
+                html_content = h2_pattern.sub(replace_h2, html_content)
+                
+            except Exception as e:
+                print(f"处理标题时出错: {str(e)}")
             
             # 组合最终内容
             try:
